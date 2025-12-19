@@ -23,8 +23,6 @@ While building RAG systems, a recurring challenge emerged:
 - LLMs are powerful but expensive and sensitive to context quality
 - Small parameter changes (chunk size, k, reranker) can drastically affect answer quality
 
-This project exists to systematically study and learn these behaviors instead of guessing.
-
 ---
 
 ## Core Idea
@@ -107,7 +105,7 @@ The ML model is evaluated against static heuristics and always-hybrid baselines.
 
 - Question feature extraction implemented
 - Dataset schema finalized
-- Dataset generation in progress
+- Dataset generation in progress 
 
 Model training and evaluation are upcoming stages.
 

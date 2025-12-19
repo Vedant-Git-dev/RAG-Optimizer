@@ -1,11 +1,12 @@
 from rank_bm25 import BM25Okapi
-from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 import pickle
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 def faiss(chunks):
-    embedder = HuggingFaceBgeEmbeddings("all-MiniLM-L6-v2")
+    
+    embedder = HuggingFaceEmbeddings(model_name = "all-MiniLM-L6-v2")
 
     vectorstore = FAISS.from_texts(chunks, embedder)
     vectorstore.save_local("retrievers/vectorstore")

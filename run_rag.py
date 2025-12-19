@@ -1,19 +1,11 @@
-from ingest import ingest_data
-from transformers import pipeline
-from langchain_community.vectorstores import FAISS
 import pickle
-import pandas as pd
-from sentence_transformers import CrossEncoder
-from langchain_community.llms import HuggingFacePipeline
+from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
-from langchain_community.embeddings import HuggingFaceEmbeddings
-
-
+from transformers import pipeline
+from langchain_community.llms import HuggingFacePipeline
 
 def faiss_retrieval(k, question, embedding):
-    
-    vectorstore = FAISS.load_local("retrievers/faiss", embedding, allow_dangerous_deserialization = True)
-
+    vectorstore = FAISS.load_local("retrievers/vectorstore", embedding, allow_dangerous_deserialization = True)
     retriever = vectorstore.as_retriever(
         search_kwargs = {"k" : k}
     )
@@ -60,7 +52,7 @@ def merge_and_dedupe(doc1, doc2):
     merged = []
 
     for d in doc1 + doc2:
-        text = d.page_content.strip()
+        text = d.page_content.strip().lower()
 
         if text not in seen:
             merged.append(d)
@@ -68,8 +60,8 @@ def merge_and_dedupe(doc1, doc2):
 
     return merged
 
-def hybrid_retrieval(k, question):
-    faiss_doc = faiss_retrieval(k = k, question = question)
+def hybrid_retrieval(k, question, embedding):
+    faiss_doc = faiss_retrieval(k = k, question = question, embedding = embedding)
     bm25_doc = bm25_retrieval(k = k, question = question)
 
     faiss_doc = normalize_doc(faiss_doc, "faiss")
@@ -80,30 +72,23 @@ def hybrid_retrieval(k, question):
     return final_docs
 
 # Main function
-def run_rag_pipeline(retriever, chunk_size, chunk_overlap, k, answer_model, reranker, question, context, rerank):
-    
-    ingest_data(
-            context=context, 
-            chunk_size=chunk_size, 
-            chunk_overlap=chunk_overlap,
-            retriever=retriever,
-        )
+def run_rag_pipeline(retriever, k, answer_model, reranker, question, need_rerank, embedding):
     
     retriever_k = max(10, k * 2) if reranker else k
 
-    if retriever == "faiss":
-        docs = faiss_retrieval(k = retriever_k, question = question)
+    if retriever == "faiss": 
+        docs = faiss_retrieval(k = retriever_k, question = question, embedding = embedding)
     
     elif retriever == "bm25":
         docs = bm25_retrieval(k = retriever_k, question = question)
 
     else:
-        docs = hybrid_retrieval(k = retriever_k, question = question)
+        docs = hybrid_retrieval(k = retriever_k, question = question, embedding = embedding)
 
-    if reranker:
+    if need_rerank:
 
         pairs = [(question, chunk.page_content) for chunk in docs]
-        scores = rerank.predict(pairs)
+        scores = reranker.predict(pairs)
 
         
         top_k = sorted(
@@ -114,13 +99,12 @@ def run_rag_pipeline(retriever, chunk_size, chunk_overlap, k, answer_model, rera
 
         docs = [doc for _, doc in top_k]
 
-    context = "\n\n".join(d.page_content for d in docs)
+    retrieved_context = "\n\n".join(d.page_content for d in docs)
 
-    if answer_model == "qa":
-        model = pipeline("question-answering", model = "distilbert-base-cased-distilled-squad")
-        ans = model(question = question, context = context)["answer"]
+    try:
+        ans = answer_model(question = question, context = retrieved_context)["answer"]
 
-    elif answer_model == "llm":
+    except Exception as e:
 
         prompt = f"""
             You are an assistant answering questions using retrieved document context.
@@ -140,7 +124,7 @@ def run_rag_pipeline(retriever, chunk_size, chunk_overlap, k, answer_model, rera
             - Do not mention section names, chunk numbers, or document metadata.
 
             CONTEXT:
-            {context}
+            {retrieved_context}
 
             QUESTION:
             {question}
@@ -148,11 +132,8 @@ def run_rag_pipeline(retriever, chunk_size, chunk_overlap, k, answer_model, rera
             ANSWER:
             """
         
-        pipe = pipeline("text2text-generation", model = "google/flan-t5-base", max_new_tokens = 512)
-
-        model = HuggingFacePipeline(pipeline = pipe)
-        ans = model.invoke(prompt)
-
+        ans = answer_model.invoke(prompt)
+    
     return ans
     
     

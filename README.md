@@ -105,7 +105,7 @@ The ML model is evaluated against static heuristics and always-hybrid baselines.
 
 - Question feature extraction implemented
 - Dataset schema finalized
-- Dataset generation in progress 
+- Dataset generation is done 
 
 Model training and evaluation are upcoming stages.
 

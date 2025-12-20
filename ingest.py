@@ -19,7 +19,7 @@ def bm25(chunks):
     with open("retrievers/bm25/bm25.pkl", "wb") as f:
         pickle.dump(bm25, f)
 
-    with open("retrievers/bm25/bm25.pkl", "wb") as f:
+    with open("retrievers/bm25/chunks.pkl", "wb") as f:
         pickle.dump(chunks, f)
 
 def ingest_data(context, chunk_size, chunk_overlap, retriever):

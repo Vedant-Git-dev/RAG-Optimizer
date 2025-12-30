@@ -104,8 +104,9 @@ The ML model is evaluated against static heuristics and always-hybrid baselines.
 ## Current Status
 
 - Question feature extraction implemented
-- Dataset schema finalized
-- Dataset generation is done 
+- Proposal model for predicting top-7 config is completed 
+- Training ranker for choosing best config is under progress 
+
 
 Model training and evaluation are upcoming stages.
 

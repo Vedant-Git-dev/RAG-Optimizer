@@ -1,123 +1,208 @@
-# ML-Based RAG Configuration Optimizer 
+## RAG Configuration Optimizer
 
-## Overview
+This project builds an automatic RAG configuration optimizer that selects the best retrieval and generation setup for a given question.
+Instead of using a fixed RAG pipeline, the system learns from past runs to dynamically choose the most suitable configuration.
 
-This project explores a core but under-addressed problem in Retrieval-Augmented Generation (RAG) systems:
+The core idea is a two-stage decision system:
 
-**How do we choose the right RAG configuration for a given question?**
+- A Proposer filters promising RAG configurations.
 
-Instead of relying on static heuristics (fixed retrievers, fixed chunk sizes, fixed pipelines), this project aims to **learn** which RAG configuration works best based on question characteristics.
-
-The system treats RAG as a configurable system and frames configuration selection as a machine learning problem.
-
-This repository is currently under active development.
+- A Ranker selects the best configuration among those candidates.
 
 ---
 
-## Motivation
+## Problem Motivation
 
-While building RAG systems, a recurring challenge emerged:
+RAG performance is highly sensitive to configuration choices such as:
 
-- BM25 works better for some questions, FAISS for others
-- Extractive QA models fail on multi-chunk or list-based answers
-- LLMs are powerful but expensive and sensitive to context quality
-- Small parameter changes (chunk size, k, reranker) can drastically affect answer quality
+- retriever type (BM25, FAISS, etc.)
 
----
+- chunk size and overlap
 
-## Core Idea
+- top-k retrieval depth
 
-For each question:
-1. Run multiple RAG configurations
-2. Measure answer quality
-3. Log configuration parameters and question features
-4. Train a model to predict the best configuration for future questions
+- reranking usage
 
-The ML model does not generate answers.  
-It selects the most suitable RAG setup.
+- answer generation model
+
+A single static configuration performs well on average but fails on specific question types.
+This project treats RAG configuration selection as a learning-to-rank problem.
 
 ---
 
-## RAG Configurations
+## Dataset Structure
 
-Each configuration is defined by:
+Each row represents a (question, configuration) pair with an observed reward.
 
-- Retriever type: BM25, FAISS, Hybrid
-- Chunk size
-- Top-k retrieval depth
-- Reranker on or off (cross-encoder)
-- Answering model: Extractive QA or LLM
+### Key columns
 
-Invalid or low-signal combinations are explicitly filtered to reduce noise.
+question id – question identifier (grouping key)
 
----
+Question features:
 
-## Dataset Generation Pipeline
+- token length
 
-For each question and configuration pair, the following are logged:
+- entity count
 
-- Question text
-- Question type (factoid, list, explanatory, summary)
-- Question features:
-  - Token length
-  - Named entity count
-  - Contains numbers
-  - Question embedding
-- RAG configuration parameters:
-  - Retrieved chunk IDs
-  - Model prediction
-  - Ground truth answer
-  - Evaluation metrics (Exact Match, F1, semantic similarity)
+- question type
 
-This results in a structured dataset suitable for supervised learning.
+- presence of digits (isdigit)
+  
+Configuration features:
 
----
+- retriever
 
-## Evaluation Metrics
+- chunk size
 
-Answer quality is evaluated using:
+- chunk overlap
 
-- Exact Match for strict factoid questions
-- Token-level F1 using SQuAD-style normalization
-- Semantic similarity for explanatory answers
-- Manual scoring for ambiguous cases
+- reranker flag (True or False)
 
-Metrics are chosen based on question type to avoid misleading supervision.
+- answer model
+
+- reward – performance score for that configuration
+
+Each question is evaluated with multiple configurations.
 
 ---
 
-## Machine Learning Objective
+## Models
 
-The ML task is defined as:
+1. Proposer (Candidate Generator)
 
-Given a question and its features, predict the best-performing RAG configuration.
+- Model: LightGBMClassifier
 
-Initial models will include:
-- Logistic Regression
-- Random Forest
-- Gradient Boosted Trees
+- Objective: binary classification
 
-The ML model is evaluated against static heuristics and always-hybrid baselines.
+- Training target: whether a configuration belongs to the top-N configs for a question
+
+- Purpose: high recall, not precision
+
+The proposer ensures the optimal configuration is almost always included in the candidate set.
+
+2. Ranker (Final Selector)
+
+- Model: LightGBMRanker (LambdaRank)
+
+- Objective: learning-to-rank with NDCG
+
+- Training target: discretized relevance derived from reward
+
+- Grouping: per-question (question id)
+
+The ranker learns relative ordering between configurations for the same question.
 
 ---
 
-## Current Status
+## Training Strategy
 
-- Question feature extraction implemented
-- Proposal model for predicting top-7 config is completed 
-- Training ranker for choosing best config is under progress 
+- Strict separation of questions between splits
 
+- Row ordering enforced before ranker training
 
-Model training and evaluation are upcoming stages.
+- Categorical features encoded using fixed mappings
 
 ---
 
-## Planned Work
+## Evaluation
 
-- Finalize dataset generation at scale
-- Train baseline ML models
-- Analyze feature importance
-- Compare ML routing versus heuristic routing
-- Add detailed experiment reports
+1. Ranker Quality
+
+- NDCG@k to measure ordering quality
+
+- Hit@k to measure near-optimal selection
+
+2. End-to-End System
+
+- Regret = (oracle reward − chosen reward)
+
+- Median regret ≈ 0 for most questions
+
+- Mean regret affected by rare tail cases (feature-limited)
+
+The system performs strongly on typical cases while remaining explainable.
+
+---
+
+## Exported Artifacts
+
+The final system exports:
+
+models/
+
+├── proposer.txt          # LightGBM proposer
+
+├── ranker.txt            # LightGBM ranker
+
+└── feature_cols.joblib   # feature order/schema
+
+This makes the optimizer portable across notebooks and environments.
+
+---
+
+## Inference Flow
+
+- Extract question features
+
+- Enumerate all RAG configurations
+
+- Score configurations with proposer
+
+- Select top-N candidates
+
+- Rank candidates with ranker
+
+- Choose best configuration
+
+- Execute RAG with chosen config
+
+---
+
+## Key Design Decisions
+
+- Two-stage architecture to balance coverage and precision
+
+- Learning-to-rank instead of regression or classification
+
+- Group-aware training to avoid data leakage
+
+- Explicit feature versioning for reproducibility
+
+---
+
+## Limitations
+
+- Tail failures exist when reward differences are driven by signals not present in features
+
+- Performance depends on the diversity of training configurations
+
+- Designed for structured RAG config spaces, not arbitrary pipelines
+
+---
+
+## Future Improvements
+
+Add retrieval-quality signals (similarity statistics)
+
+Online learning from new RAG executions
+
+Per-domain specialization
+
+---
+
+## Summary
+
+This project demonstrates how RAG configuration selection can be framed as a learning problem rather than a manual tuning task.
+The resulting system is modular, explainable, and extensible to more complex retrieval and generation pipelines.
+
+---
+
+<div align = "center">
+
+**Made with ❤️ by [Vedant](https://github.com/Vedant-Git-dev)**
+
+If you find this project helpful, please consider giving it a ⭐️!
+
+</div>
 
 ---
